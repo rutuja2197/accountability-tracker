@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <title>Accountability Tracker</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a;-webkit-text-size-adjust:100%}
+    button,input{font-family:inherit}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const{useState,useEffect,useRef}=React;
+const C={tp:"#1a1a1a",ts:"#6b7280",tt:"#9ca3af",bp:"#ffffff",bs:"#f8fafc",bo:"#e2e8f0",bt:"#f1f5f9",P:"#534AB7"};
+const CAT={study:{label:"Study",bg:"#E1F5EE",color:"#085041"},job:{label:"Job hunt",bg:"#E6F1FB",color:"#0C447C"},exercise:{label:"Exercise",bg:"#FAEEDA",color:"#633806"}};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const todayStr=()=>new Date().toISOString().slice(0,10);
+function ls(k,d=null){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}}
+function lss(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+
+function parseICS(txt){
+  const evts=[];let cur=null;
+  for(const l of txt.split(/\r?\n/).map(x=>x.trim())){
+    if(l==="BEGIN:VEVENT")cur={};
+    else if(l==="END:VEVENT"&&cur){evts.push(cur);cur=null;}
+    else if(cur){
+      if(l.startsWith("SUMMARY:"))cur.summary=l.slice(8);
+      else if(l.startsWith("DTSTART")){const v=l.split(":").slice(1).join(":");const d=v.replace(/[TZ]/g,"").slice(0,8);if(d.length===8)cur.date=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;}
+    }
+  }
+  return evts.filter(e=>e.summary);
+}
+function guesscat(s){const l=s.toLowerCase();return l.match(/run|gym|workout|exercise|swim|walk|cycle|sport|fitness/)?"exercise":l.match(/apply|interview|job|resume|cv|company|career|recruiter/)?"job":"study";}
+
+function Tag({cat}){const c=CAT[cat];if(!c)return null;return <span style={{fontSize:11,padding:"2px 9px",borderRadius:20,background:c.bg,color:c.color,fontWeight:500,display:"inline-block",whiteSpace:"nowrap"}}>{c.label}</span>;}
+function Lbl({children}){return <div style={{fontSize:11,fontWeight:500,color:C.ts,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6,marginTop:14}}>{children}</div>;}
+function CatPicker({value,onChange}){return <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{Object.entries(CAT).map(([k,c])=>(<button key={k} onClick={()=>onChange(k)} style={{fontSize:12,padding:"6px 14px",borderRadius:20,cursor:"pointer",border:value===k?"none":"0.5px solid "+C.bo,background:value===k?c.bg:"transparent",color:value===k?c.color:C.ts,fontWeight:value===k?500:400}}>{c.label}</button>))}</div>;}
+const iStyle={width:"100%",fontSize:14,padding:"9px 12px",borderRadius:8,border:"0.5px solid "+C.bo,background:C.bp,color:C.tp,boxSizing:"border-box"};
+const pBtn={width:"100%",padding:"10px",borderRadius:8,background:C.P,border:"none",color:"#fff",fontSize:14,fontWeight:500,cursor:"pointer",marginTop:14};
+
+function Modal({title,children,onClose}){
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.35)",zIndex:50,display:"flex",alignItems:"flex-end"}}>
+    <div style={{background:C.bp,borderRadius:"14px 14px 0 0",padding:"1.25rem 1.25rem 2rem",width:"100%",boxSizing:"border-box",maxWidth:480,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <span style={{fontSize:15,fontWeight:500}}>{title}</span>
+        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:C.ts,lineHeight:1}}>×</button>
+      </div>
+      {children}
+    </div>
+  </div>;
+}
+
+function QuickLogModal({onSave,onClose}){
+  const[cat,setCat]=useState("study");const[text,setText]=useState("");
+  return <Modal title="Quick log" onClose={onClose}><Lbl>Category</Lbl><CatPicker value={cat} onChange={setCat}/><Lbl>What happened? <span style={{fontWeight:400,textTransform:"none",fontSize:11}}>optional</span></Lbl><input value={text} onChange={e=>setText(e.target.value)} placeholder="One line is enough..." style={iStyle}/><button onClick={()=>onSave(cat,text)} style={pBtn}>Save</button></Modal>;
+}
+
+function AddTaskModal({onSave,onClose}){
+  const[text,setText]=useState("");const[cat,setCat]=useState("study");const[due,setDue]=useState("");
+  return <Modal title="Add task" onClose={onClose}><Lbl>What's the first physical step?</Lbl><input value={text} onChange={e=>setText(e.target.value)} placeholder='e.g. "Open Google careers page"' style={iStyle}/>{text.length>3&&<div style={{fontSize:11,color:C.tt,marginTop:3}}>Make it so small you can't say no to it</div>}<Lbl>Category</Lbl><CatPicker value={cat} onChange={setCat}/><Lbl>Due date <span style={{fontWeight:400,textTransform:"none"}}>optional</span></Lbl><input type="date" value={due} onChange={e=>setDue(e.target.value)} style={{...iStyle,width:"auto"}}/><button onClick={()=>{if(text.trim())onSave(text.trim(),cat,due);}} style={pBtn}>Add task</button></Modal>;
+}
+
+function LabelModal({capture,onSave,onClose}){
+  const[cat,setCat]=useState("study");const[text,setText]=useState("");
+  const time=new Date(capture.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  return <Modal title={`Captured at ${time}`} onClose={onClose}><div style={{fontSize:13,color:C.ts,marginBottom:12}}>What was it about?</div><CatPicker value={cat} onChange={setCat}/><input value={text} onChange={e=>setText(e.target.value)} placeholder="Add a note... (optional)" style={{...iStyle,marginTop:12}}/><div style={{marginTop:14,display:"flex",gap:8}}><button onClick={()=>onSave(cat,text)} style={{...pBtn,flex:1,marginTop:0}}>Save</button><button onClick={onClose} style={{padding:"10px 16px",borderRadius:8,background:"transparent",border:"0.5px solid "+C.bo,fontSize:14,cursor:"pointer",color:C.ts}}>Skip</button></div></Modal>;
+}
+
+function Home({streak,done,pending,todayLogs,unlabeled,onCapture,onQuickLog,onLabel,flash}){
+  return <div style={{padding:"1rem"}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+      {[{n:streak?`🔥 ${streak}`:"—",l:"Streak"},{n:done,l:"Done"},{n:pending,l:"Pending"}].map(({n,l})=>(
+        <div key={l} style={{background:C.bs,borderRadius:8,padding:"10px",textAlign:"center"}}><div style={{fontSize:20,fontWeight:500}}>{n}</div><div style={{fontSize:11,color:C.ts,marginTop:2}}>{l}</div></div>
+      ))}
+    </div>
+    <button onClick={onCapture} style={{width:"100%",padding:"20px 16px",borderRadius:12,marginBottom:6,background:flash?"#7F77DD":C.P,border:"none",color:"#fff",fontSize:16,fontWeight:500,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,transition:"background 0.2s"}}>
+      <span style={{fontSize:22}}>⚡</span>Capture this thought
+    </button>
+    <div style={{fontSize:11,color:C.tt,textAlign:"center",marginBottom:12}}>One tap · no typing · label it later</div>
+    <button onClick={onQuickLog} style={{width:"100%",padding:"10px",borderRadius:10,marginBottom:16,background:C.bs,border:"0.5px solid "+C.bo,fontSize:13,cursor:"pointer",color:C.ts,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>+ Quick log &nbsp;·&nbsp; Study · Job hunt · Exercise</button>
+    {unlabeled.length>0&&<div style={{background:"#FAEEDA",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+      <div style={{fontSize:11,fontWeight:500,color:"#633806",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.06em"}}>Label these ({unlabeled.length})</div>
+      {unlabeled.slice(0,3).map(c=>(
+        <div key={c.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"0.5px solid rgba(150,100,0,0.12)"}}>
+          <span style={{fontSize:12,color:"#633806"}}>⚡ {new Date(c.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</span>
+          <button onClick={()=>onLabel(c)} style={{fontSize:11,padding:"3px 12px",borderRadius:20,background:"#633806",color:"#fff",border:"none",cursor:"pointer"}}>Label</button>
+        </div>
+      ))}
+      {unlabeled.length>3&&<div style={{fontSize:11,color:"#633806",marginTop:6}}>+{unlabeled.length-3} more</div>}
+    </div>}
+    <Lbl>Today's log</Lbl>
+    {todayLogs.length===0?<div style={{fontSize:13,color:C.tt,padding:"10px 0"}}>Nothing logged yet today.</div>
+      :todayLogs.map(l=><div key={l.id} style={{padding:"8px 0",borderBottom:"0.5px solid "+C.bt,display:"flex",gap:8,alignItems:"flex-start"}}><Tag cat={l.category}/><span style={{fontSize:13,flex:1,color:l.text?C.tp:C.tt}}>{l.text||"Quick capture"}</span></div>)}
+  </div>;
+}
+
+function Tasks({tasks,onAdd,onToggle,onDelete}){
+  const[filter,setFilter]=useState("all");const td=todayStr();
+  const filtered=filter==="all"?tasks:tasks.filter(t=>t.category===filter);
+  return <div style={{padding:"1rem"}}>
+    <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+      {["all","study","job","exercise"].map(f=>(
+        <button key={f} onClick={()=>setFilter(f)} style={{fontSize:12,padding:"5px 12px",borderRadius:20,cursor:"pointer",border:filter===f?"none":"0.5px solid "+C.bo,background:filter===f?(f==="all"?C.P:CAT[f]?.bg):"transparent",color:filter===f?(f==="all"?"#fff":CAT[f]?.color):C.ts,fontWeight:filter===f?500:400}}>
+          {f==="all"?"All":CAT[f]?.label}
+        </button>
+      ))}
+    </div>
+    {filtered.length===0&&<div style={{fontSize:13,color:C.tt,padding:"12px 0"}}>No tasks here yet.</div>}
+    {filtered.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"0.5px solid "+C.bt}}>
+      <button onClick={()=>onToggle(t.id)} style={{width:20,height:20,borderRadius:5,cursor:"pointer",flexShrink:0,border:`1.5px solid ${t.done?C.P:C.bo}`,background:t.done?C.P:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {t.done&&<span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}
+      </button>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,textDecoration:t.done?"line-through":"none",color:t.done?C.tt:C.tp,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div>
+        {t.dueDate&&<div style={{fontSize:11,color:t.dueDate<td&&!t.done?"#A32D2D":C.tt,marginTop:1}}>{t.dueDate===td?"Due today":`Due ${t.dueDate}`}</div>}
+      </div>
+      <Tag cat={t.category}/>
+      <button onClick={()=>onDelete(t.id)} style={{background:"none",border:"none",cursor:"pointer",color:C.tt,fontSize:18,padding:"2px 4px",flexShrink:0,lineHeight:1}}>×</button>
+    </div>)}
+    <div style={{marginTop:14}}><button onClick={onAdd} style={{width:"100%",padding:"10px",borderRadius:8,background:C.P,border:"none",color:"#fff",fontSize:13,fontWeight:500,cursor:"pointer"}}>+ Add task</button></div>
+  </div>;
+}
+
+function Log({logs,dots,streak,onImage,aiLoading}){
+  const fRef=useRef();const[toast,setToast]=useState("");
+  async function handleFile(e){const f=e.target.files?.[0];if(!f)return;const ok=await onImage(f);setToast(ok?"Workout logged! ✓":"Couldn't read as fitness data.");setTimeout(()=>setToast(""),3000);e.target.value="";}
+  return <div style={{padding:"1rem"}}>
+    {toast&&<div style={{padding:"9px 14px",borderRadius:8,fontSize:13,marginBottom:12,background:toast.includes("✓")?"#E1F5EE":"#FCEBEB",color:toast.includes("✓")?"#085041":"#A32D2D"}}>{toast}</div>}
+    <div style={{background:C.bs,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+      <div style={{fontSize:13,fontWeight:500,marginBottom:8}}>🔥 {streak} day streak</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+        {dots.map(d=><div key={d.date} title={d.date} style={{width:17,height:17,borderRadius:3,background:d.done?C.P:C.bt,outline:d.today?`2px solid ${C.P}`:"none",outlineOffset:1}}/>)}
+      </div>
+      <div style={{fontSize:11,color:C.tt,marginTop:5}}>Last 30 days · each square = a day you logged</div>
+    </div>
+    <Lbl>Fitness screenshot</Lbl>
+    <div style={{border:"0.5px dashed "+C.bo,borderRadius:10,padding:"16px",textAlign:"center",marginBottom:4}}>
+      <input type="file" ref={fRef} accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+      <button onClick={()=>fRef.current?.click()} style={{background:"none",border:"none",cursor:"pointer",color:C.ts,fontSize:13}}>{aiLoading?"Analyzing…":"📸 Upload workout screenshot"}</button>
+      <div style={{fontSize:11,color:C.tt,marginTop:3}}>AI reads it and logs it — no typing needed</div>
+    </div>
+    <Lbl>All logs</Lbl>
+    {logs.length===0&&<div style={{fontSize:13,color:C.tt,padding:"10px 0"}}>No logs yet. Use Quick Log on the home screen!</div>}
+    {logs.map(l=><div key={l.id} style={{padding:"8px 0",borderBottom:"0.5px solid "+C.bt}}>
+      <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:3}}><Tag cat={l.category}/><span style={{fontSize:11,color:C.tt}}>{new Date(l.timestamp).toLocaleDateString([],{month:"short",day:"numeric"})}</span>{l.autoParsed&&<span style={{fontSize:10,padding:"1px 7px",borderRadius:20,background:"#E6F1FB",color:"#0C447C"}}>auto</span>}</div>
+      <div style={{fontSize:13,color:l.text?C.tp:C.tt}}>{l.text||"Quick capture"}</div>
+    </div>)}
+  </div>;
+}
+
+function Summary({stats}){
+  const[copied,setCopied]=useState(false);
+  const txt=`Week summary 📊\n✅ ${stats.tasksCount} tasks completed\n📅 ${stats.loggedDays}/7 days logged\n💼 ${stats.jobApps} job hunt actions\n📝 ${stats.logsCount} total logs\n\nStaying accountable 💪`;
+  return <div style={{padding:"1rem"}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+      {[{n:`${stats.loggedDays}/7`,l:"Days logged"},{n:stats.tasksCount,l:"Tasks done"},{n:stats.logsCount,l:"Log entries"},{n:stats.jobApps,l:"Job hunt actions"}].map(({n,l})=>(
+        <div key={l} style={{background:C.bs,borderRadius:8,padding:"12px",textAlign:"center"}}><div style={{fontSize:22,fontWeight:500}}>{n}</div><div style={{fontSize:11,color:C.ts,marginTop:3}}>{l}</div></div>
+      ))}
+    </div>
+    <Lbl>Share with accountability buddy</Lbl>
+    <div style={{background:C.bs,borderRadius:10,padding:"12px 14px",fontSize:13,whiteSpace:"pre-line",lineHeight:1.8,marginBottom:10,color:C.ts}}>{txt}</div>
+    <button onClick={()=>{navigator.clipboard?.writeText(txt);setCopied(true);setTimeout(()=>setCopied(false),2000);}} style={{width:"100%",padding:"10px",borderRadius:8,background:copied?"#1D9E75":C.P,border:"none",color:"#fff",fontSize:13,fontWeight:500,cursor:"pointer",transition:"background 0.3s"}}>
+      {copied?"Copied! ✓":"📋 Copy to share"}
+    </button>
+  </div>;
+}
+
+function Settings({onICS,apiKey,onApiKey}){
+  const fRef=useRef();const[result,setResult]=useState("");
+  const[morningTime,setMorningTime]=useState(()=>ls("at_rem_morning","08:00"));
+  const[eveningTime,setEveningTime]=useState(()=>ls("at_rem_evening","21:00"));
+  const[notifStatus,setNotifStatus]=useState(()=>typeof Notification!=="undefined"?Notification.permission:"unsupported");
+
+  function saveReminders(){lss("at_rem_morning",morningTime);lss("at_rem_evening",eveningTime);setResult("Times saved!");setTimeout(()=>setResult(""),2500);}
+  async function enableNotifs(){if(typeof Notification==="undefined"){setNotifStatus("unsupported");return;}const p=await Notification.requestPermission();setNotifStatus(p);}
+
+  async function handleICS(e){
+    const f=e.target.files?.[0];if(!f)return;
+    const txt=await f.text();const n=onICS(txt);
+    setResult(n>0?`${n} event${n===1?"":"s"} added as tasks!`:"No events found in file.");
+    e.target.value="";
+  }
+
+  return <div style={{padding:"1rem"}}>
+    <Lbl>Anthropic API key</Lbl>
+    <div style={{fontSize:12,color:C.tt,marginBottom:6}}>Needed for AI fitness screenshot parsing</div>
+    <input type="password" value={apiKey} onChange={e=>onApiKey(e.target.value)} placeholder="sk-ant-..." style={iStyle}/>
+    <div style={{fontSize:11,color:C.tt,marginTop:4}}>Stored only on this device. Get yours at console.anthropic.com → API Keys</div>
+
+    <Lbl>Reminders</Lbl>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+      <div><div style={{fontSize:12,color:C.ts,marginBottom:4}}>Morning</div><input type="time" value={morningTime} onChange={e=>setMorningTime(e.target.value)} style={iStyle}/></div>
+      <div><div style={{fontSize:12,color:C.ts,marginBottom:4}}>Evening</div><input type="time" value={eveningTime} onChange={e=>setEveningTime(e.target.value)} style={iStyle}/></div>
+    </div>
+    {notifStatus!=="granted"
+      ?<button onClick={enableNotifs} style={{...pBtn,marginTop:8}}>{notifStatus==="unsupported"?"Notifications not supported":"Enable notifications"}</button>
+      :<button onClick={saveReminders} style={{...pBtn,marginTop:8,background:"#1D9E75"}}>Save reminder times ✓</button>}
+    <div style={{fontSize:11,color:C.tt,marginTop:6}}>Safari must be open on your phone for reminders to fire</div>
+
+    <Lbl>Calendar import (.ics)</Lbl>
+    <div style={{border:"0.5px dashed "+C.bo,borderRadius:10,padding:"16px",textAlign:"center"}}>
+      <input type="file" ref={fRef} accept=".ics" onChange={handleICS} style={{display:"none"}}/>
+      <button onClick={()=>fRef.current?.click()} style={{background:"none",border:"none",cursor:"pointer",color:C.ts,fontSize:13}}>📅 Upload your .ics file</button>
+      <div style={{fontSize:11,color:C.tt,marginTop:4}}>Events auto-import as tasks</div>
+    </div>
+
+    <Lbl>iOS shortcut (one-tap capture)</Lbl>
+    <div style={{background:C.bs,borderRadius:10,padding:"12px 14px",fontSize:12,color:C.ts,lineHeight:1.9}}>
+      1. Open the <b>Shortcuts</b> app on your iPhone<br/>
+      2. Tap <b>+</b> → Add action → <b>Open URL</b><br/>
+      3. Enter: <b>your-app-url.vercel.app?capture=true</b><br/>
+      4. Tap the share icon → <b>Add to Home Screen</b><br/>
+      One tap from anywhere → instant ⚡ capture
+    </div>
+
+    {result&&<div style={{marginTop:10,fontSize:13,padding:"8px 12px",borderRadius:8,background:"#E1F5EE",color:"#085041"}}>{result}</div>}
+  </div>;
+}
+
+const TABS=[{id:"home",icon:"ti-home",label:"Home"},{id:"tasks",icon:"ti-check",label:"Tasks"},{id:"log",icon:"ti-calendar",label:"Log"},{id:"summary",icon:"ti-star",label:"Summary"},{id:"settings",icon:"ti-settings",label:"Settings"}];
+
+function App(){
+  const[tab,setTab]=useState(()=>{const p=new URLSearchParams(window.location.search);return p.get("tab")||"home";});
+  const[tasks,setTasks]=useState(()=>ls("at_tasks",[]));
+  const[logs,setLogs]=useState(()=>ls("at_logs",[]));
+  const[captures,setCaptures]=useState(()=>ls("at_caps",[]));
+  const[apiKey,setApiKey]=useState(()=>ls("at_apikey",""));
+  const[modal,setModal]=useState(null);
+  const[aiLoading,setAiLoading]=useState(false);
+  const[flash,setFlash]=useState(false);
+
+  useEffect(()=>lss("at_tasks",tasks),[tasks]);
+  useEffect(()=>lss("at_logs",logs),[logs]);
+  useEffect(()=>lss("at_caps",captures),[captures]);
+  useEffect(()=>lss("at_apikey",apiKey),[apiKey]);
+
+  // Reminder ticker
+  useEffect(()=>{
+    if(typeof Notification==="undefined"||Notification.permission!=="granted")return;
+    const iv=setInterval(()=>{
+      const now=new Date();
+      const t=`${now.getHours().toString().padStart(2,"0")}:${now.getMinutes().toString().padStart(2,"0")}`;
+      if(t===ls("at_rem_morning","08:00"))new Notification("Accountability",{body:"Morning check-in — what's your commitment today? ⚡"});
+      if(t===ls("at_rem_evening","21:00"))new Notification("Accountability",{body:"Evening check-in — how did today go?"});
+    },60000);
+    return()=>clearInterval(iv);
+  },[]);
+
+  // Auto-open capture if ?capture=true (for iOS shortcut)
+  useEffect(()=>{
+    if(new URLSearchParams(window.location.search).get("capture")==="true")setModal("panic");
+  },[]);
+
+  const addLog=(cat,text,auto=false)=>setLogs(p=>[{id:uid(),category:cat,text,timestamp:new Date().toISOString(),autoParsed:auto,date:todayStr()},...p]);
+  const addTask=(text,cat,due)=>setTasks(p=>[{id:uid(),text,category:cat,dueDate:due||null,done:false,createdAt:new Date().toISOString()},...p]);
+
+  function doPanic(){setCaptures(p=>[{id:uid(),timestamp:new Date().toISOString(),labeled:false},...p]);setFlash(true);setTimeout(()=>setFlash(false),500);}
+
+  async function analyzeImage(file){
+    if(!apiKey){alert("Add your Anthropic API key in Settings first.");return false;}
+    setAiLoading(true);
+    try{
+      const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});
+      const resp=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:150,messages:[{role:"user",content:[
+          {type:"image",source:{type:"base64",media_type:file.type||"image/jpeg",data:b64}},
+          {type:"text",text:"Is this a fitness/workout screenshot? If yes, extract: activity, duration, distance, calories if shown. Respond in ONE short line like '5.2km run · 28 min · 312 cal'. If not fitness: respond exactly NOT_FITNESS."}
+        ]}]})});
+      const data=await resp.json();
+      const txt=data.content?.find(b=>b.type==="text")?.text||"";
+      if(!txt.includes("NOT_FITNESS")&&txt.trim().length>3){addLog("exercise",txt.trim(),true);setAiLoading(false);return true;}
+    }catch(e){console.error(e);}
+    setAiLoading(false);return false;
+  }
+
+  function importICS(txt){const evts=parseICS(txt);evts.forEach(e=>addTask(e.summary,guesscat(e.summary),e.date||null));return evts.length;}
+
+  function getStreak(){const dates=new Set(logs.map(l=>l.date));let s=0;const now=new Date();for(let i=0;i<365;i++){const d=new Date(now);d.setDate(d.getDate()-i);if(dates.has(d.toISOString().slice(0,10)))s++;else if(i>0)break;}return s;}
+  function getDots(){const dates=new Set(logs.map(l=>l.date));const now=new Date();const dots=[];for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);const s=d.toISOString().slice(0,10);dots.push({date:s,done:dates.has(s),today:i===0});}return dots;}
+  function getStats(){const wk=new Date();wk.setDate(wk.getDate()-7);const wl=logs.filter(l=>new Date(l.timestamp)>=wk);const wt=tasks.filter(t=>t.done&&t.createdAt&&new Date(t.createdAt)>=wk);return{loggedDays:new Set(wl.map(l=>l.date)).size,logsCount:wl.length,tasksCount:wt.length,jobApps:[...wl,...wt].filter(x=>x.category==="job").length};}
+
+  const todayLogs=logs.filter(l=>l.date===todayStr());
+  const unlabeled=captures.filter(c=>!c.labeled);
+  const streak=getStreak();
+  const TITLE={home:"Dashboard",tasks:"Tasks",log:"Log & Streak",summary:"Weekly Summary",settings:"Settings"};
+
+  return <div style={{maxWidth:480,margin:"0 auto",minHeight:"100dvh",display:"flex",flexDirection:"column"}}>
+    <div style={{padding:"14px 1rem 0",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4,flexShrink:0}}>
+      <span style={{fontSize:16,fontWeight:500}}>{TITLE[tab]}</span>
+      <span style={{fontSize:12,color:C.tt}}>{new Date().toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})}</span>
+    </div>
+    <div style={{flex:1,overflowY:"auto"}}>
+      {tab==="home"&&<Home streak={streak} done={tasks.filter(t=>t.done).length} pending={tasks.filter(t=>!t.done).length} todayLogs={todayLogs} unlabeled={unlabeled} onCapture={doPanic} onQuickLog={()=>setModal("ql")} onLabel={c=>setModal({type:"lbl",c})} flash={flash}/>}
+      {tab==="tasks"&&<Tasks tasks={tasks} onAdd={()=>setModal("at")} onToggle={id=>setTasks(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t))} onDelete={id=>setTasks(p=>p.filter(t=>t.id!==id))}/>}
+      {tab==="log"&&<Log logs={logs} dots={getDots()} streak={streak} onImage={analyzeImage} aiLoading={aiLoading}/>}
+      {tab==="summary"&&<Summary stats={getStats()}/>}
+      {tab==="settings"&&<Settings onICS={importICS} apiKey={apiKey} onApiKey={v=>{setApiKey(v);lss("at_apikey",v);}}/>}
+    </div>
+    <div style={{display:"flex",borderTop:"0.5px solid "+C.bt,background:C.bp,flexShrink:0}}>
+      {TABS.map(({id,icon,label})=>(
+        <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"10px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2,color:tab===id?C.P:C.tt}}>
+          <i className={`ti ${icon}`} style={{fontSize:20}}/>
+          <span style={{fontSize:10}}>{label}</span>
+        </button>
+      ))}
+    </div>
+    {modal==="ql"&&<QuickLogModal onSave={(cat,txt)=>{addLog(cat,txt);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="at"&&<AddTaskModal onSave={(txt,cat,due)=>{addTask(txt,cat,due);setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal?.type==="lbl"&&<LabelModal capture={modal.c} onSave={(cat,txt)=>{setCaptures(p=>p.map(c=>c.id===modal.c.id?{...c,labeled:true}:c));addLog(cat,txt||"Quick capture");setModal(null);}} onClose={()=>setModal(null)}/>}
+    {modal==="panic"&&<QuickLogModal onSave={(cat,txt)=>{addLog(cat,txt);setModal(null);}} onClose={()=>setModal(null)}/>}
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
