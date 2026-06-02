@@ -255,7 +255,9 @@ function App(){
 
   // Auto-open capture if ?capture=true (for iOS shortcut)
   useEffect(()=>{
-    if(new URLSearchParams(window.location.search).get("capture")==="true")setModal("panic");
+    const p=new URLSearchParams(window.location.search);
+    if(p.get("capture")==="true")setModal("panic");
+    if(p.get("quicklog")==="true")setModal("ql");
   },[]);
 
   const addLog=(cat,text,auto=false)=>setLogs(p=>[{id:uid(),category:cat,text,timestamp:new Date().toISOString(),autoParsed:auto,date:todayStr()},...p]);
